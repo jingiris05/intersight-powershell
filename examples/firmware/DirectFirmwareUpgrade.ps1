@@ -10,15 +10,27 @@
 Set-IntersightConfiguration @intersightEnv
 #>
 
-$Source1 = Initialize-IntersightSoftwarerepositoryNfsServer -FileLocation "10.xx.xx.xx/shared/ucsc-845a-m8-huu-2.0.1.250000D.iso" -ObjectType "SoftwarerepositoryNfsServer"
-$Account1 = Get-IntersightIamAccount -Name "my-account"
-$Organization1 = Get-IntersightOrganizationOrganization -Name "test_new_org" -Account $Account1
-$Catalog1 = Get-IntersightSoftwarerepositoryCatalog -Name "user-catalog" -Organization $Organization1
-$FirmwareDistributable = New-IntersightFirmwareDistributable -Name "ucsc-845a-m8-huu-2.0.1.250000D" -ImportAction "None" -SupportedModels @("CAI-845A-M8") -Version "-" -Origin "User" -Source $Source1 -Catalog $Catalog1
-$Organization2 = Get-IntersightOrganizationOrganization -Name "test_new_org" -Account $Account1
-$Catalog2 = Get-IntersightSoftwarerepositoryCatalog -Name "user-catalog" -Organization $Organization2
-$UpdatedFirmwareDistributable = $FirmwareDistributable | Set-IntersightFirmwareDistributable -Source $Source1 -Version "2.0(1.250000D)" -Catalog $Catalog2 -Name "ucsc-845a-m8-huu-2.0.1.250000D" -SupportedModels @("CAI-845A-M8") -Description "invalid CIFS image"
-$DirectDownload3 = Initialize-IntersightFirmwareDirectDownload -ObjectType "FirmwareDirectDownload"
-$NetworkShare3 = Initialize-IntersightFirmwareNetworkShare -Upgradeoption "NwUpgradeFull" -MapType "Nfs" -ObjectType "FirmwareNetworkShare"
-$Server3 = Get-IntersightComputeRackUnit -DeviceMoId "69a54b3a6f72613101af857f" -Dn "/redfish/v1/Systems/system"
-$FirmwareUpgrade = New-IntersightFirmwareUpgrade -UpgradeType "NetworkUpgrade" -Distributable $UpdatedFirmwareDistributable -DirectDownload $DirectDownload3 -NetworkShare $NetworkShare3 -Server $Server3 -ExcludeComponentList @()
+# Initialize the NFS server source pointing to the HUU firmware ISO file.
+$NfsSource = Initialize-IntersightSoftwarerepositoryNfsServer -FileLocation "10.xx.xx.xx/shared/ucsc-845a-m8-huu-2.0.1.250000D.iso" -ObjectType "SoftwarerepositoryNfsServer"
+
+# Retrieve the organization under which the firmware distributable will be created.
+$Organization = Get-IntersightOrganizationOrganization -Name "test_new_org"
+
+# Retrieve the user's software repository catalog scoped to the organization.
+$Catalog = Get-IntersightSoftwarerepositoryCatalog -Name "user-catalog" -Organization $Organization
+
+# Create a new firmware distributable entry in the catalog with the NFS source.
+$FirmwareDistributable = New-IntersightFirmwareDistributable -Name "ucsc-845a-m8-huu-2.0.1.250000D" -ImportAction "None" -SupportedModels @("CAI-845A-M8") -Version "-" -Origin "User" -Source $NfsSource -Catalog $Catalog
+
+# Update the firmware distributable with the correct version info and description.
+$UpdatedFirmwareDistributable = $FirmwareDistributable | Set-IntersightFirmwareDistributable -Source $NfsSource -Version "2.0(1.250000D)" -Catalog $Catalog -Name "ucsc-845a-m8-huu-2.0.1.250000D" -SupportedModels @("CAI-845A-M8") -Description "invalid CIFS image"
+
+# Initialize direct download and network share options for the firmware upgrade.
+$DirectDownload = Initialize-IntersightFirmwareDirectDownload -ObjectType "FirmwareDirectDownload"
+$NetworkShare = Initialize-IntersightFirmwareNetworkShare -Upgradeoption "NwUpgradeFull" -MapType "Nfs" -ObjectType "FirmwareNetworkShare"
+
+# Retrieve the target rack server to upgrade by name. Replace with your server's name.
+$Server = Get-IntersightComputeRackUnit -Name "RackServer-3"
+
+# Trigger the firmware upgrade on the server using the network share method.
+$FirmwareUpgrade = New-IntersightFirmwareUpgrade -UpgradeType "NetworkUpgrade" -Distributable $UpdatedFirmwareDistributable -DirectDownload $DirectDownload -NetworkShare $NetworkShare -Server $Server -ExcludeComponentList @()

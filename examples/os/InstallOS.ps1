@@ -10,25 +10,52 @@
 Set-IntersightConfiguration @intersightEnv
 #>
 
-$Servers11 = Get-IntersightComputeRackUnit -DeviceMoId "698d5fcb6f726131016e23d4" -Dn "sys/rack-unit-1"
-$ValidInstallTarget = New-IntersightOsValidInstallTarget -Servers @($Servers11)
+# Retrieve the target rack server by name. Replace with your server's name.
+$Server = Get-IntersightComputeRackUnit -Name "RackServer-1"
+
+# Validate the server as a supported OS install target.
+$ValidInstallTarget = New-IntersightOsValidInstallTarget -Servers @($Server)
+
+# Check if the desired OS version is supported.
 $OsSupport = New-IntersightOsOsSupport -OsVersion "ESXi 8.0"
-$Account1 = Get-IntersightIamAccount -Name "my-account"
-$Organization1 = Get-IntersightOrganizationOrganization -Name "Org-Auto-8332" -Account $Account1
-$Catalog1 = Get-IntersightSoftwarerepositoryCatalog -Name "user-catalog" -Organization $Organization1
-$Image31 = Get-IntersightSoftwarerepositoryOperatingSystemFile -Name "Esxi80u2_embedded" -Catalog $Catalog1
-$OsduImage31 = Get-IntersightFirmwareServerConfigurationUtilityDistributable -Name "ucsxe-scu-7.1.7.260010.iso" -Catalog $Catalog1
-$IpV4Config31 = Initialize-IntersightCommIpV4Interface -ObjectType "CommIpV4Interface" -Gateway "" -IpAddress "" -Netmask ""
-$IpConfiguration31 = Initialize-IntersightOsIpv4Configuration -ObjectType "OsIpv4Configuration" -IpV4Config $IpV4Config31
-$Answers31 = Initialize-IntersightOsAnswers -ObjectType "OsAnswers" -Hostname "google" -IpConfigType "DHCP" -IpConfiguration $IpConfiguration31 -IsRootPasswordCrypted $false -Nameserver "" -NetworkDevice "" -ProductKey "" -Source "Template" -RootPassword "123456"
-$Organization4 = Get-IntersightOrganizationOrganization -Moid "5da9f0b76972652d30b3bae7"
-if ($Organization4) {
-    $Catalog3 = Get-IntersightOsCatalog -Name "shared" -Organization $Organization4
+
+# Retrieve the user's organization under which the OS install will be performed.
+# Replace "Org-Auto-8332" with your own organization name.
+$Organization = Get-IntersightOrganizationOrganization -Name "Org-Auto-8332"
+
+# Retrieve the user's software repository catalog scoped to the organization.
+$Catalog = Get-IntersightSoftwarerepositoryCatalog -Name "user-catalog" -Organization $Organization
+
+# Retrieve the OS image and SCU (Server Configuration Utility) image from the catalog.
+$OsImage = Get-IntersightSoftwarerepositoryOperatingSystemFile -Name "Esxi80u2_embedded" -Catalog $Catalog
+$ScuImage = Get-IntersightFirmwareServerConfigurationUtilityDistributable -Name "ucsxe-scu-7.1.7.260010.iso" -Catalog $Catalog
+
+# Configure the IPv4 network settings for the OS installation.
+$IpV4Config = Initialize-IntersightCommIpV4Interface -ObjectType "CommIpV4Interface" -Gateway "" -IpAddress "" -Netmask ""
+$IpConfiguration = Initialize-IntersightOsIpv4Configuration -ObjectType "OsIpv4Configuration" -IpV4Config $IpV4Config
+
+# Set up the OS install answers including hostname, IP config type, and root password.
+$Answers = Initialize-IntersightOsAnswers -ObjectType "OsAnswers" -Hostname "google" -IpConfigType "DHCP" -IpConfiguration $IpConfiguration -IsRootPasswordCrypted $false -Nameserver "" -NetworkDevice "" -ProductKey "" -Source "Template" -RootPassword "123456"
+
+# Retrieve the organization that owns the "shared" OS catalog containing system-provided configuration files.
+# NOTE: The Moid below is specific to this Intersight account and will NOT work in other environments.
+# Replace it with your own organization's Moid, or use -Name to look up by name instead.
+$SharedOrganization = Get-IntersightOrganizationOrganization -Moid "5da9f0b76972652d30b3bae7"
+if ($SharedOrganization) {
+    $SharedCatalog = Get-IntersightOsCatalog -Name "shared" -Organization $SharedOrganization
 } else {
-    $Catalog3 = Get-IntersightOsCatalog -Name "shared"
+    $SharedCatalog = Get-IntersightOsCatalog -Name "shared"
 }
-$ConfigurationFile31 = Get-IntersightOsConfigurationFile -Name "ESXi8.0ConfigFile" -Catalog $Catalog3
-$InstallTarget31 = Initialize-IntersightOsPhysicalDisk -ObjectType "OsPhysicalDisk" -Name "Disk 1" -SerialNumber "W0K40V960000K141L1Z5" -StorageControllerSlotId "MRAID"
-$Body31 = Initialize-IntersightOsInstall -Description "" -InstallMethod "VMedia" -Image $Image31 -OsduImage $OsduImage31 -OverrideSecureBoot $true -Organization $Organization1 -Answers $Answers31 -ConfigurationFile $ConfigurationFile31 -InstallTarget $InstallTarget31 -Server $Servers11
-$Requests13 = Initialize-IntersightBulkRestSubRequest -ObjectType "BulkRestSubRequest" -Body $Body31
-$BulkInstallRequest = New-IntersightBulkRequest -Verb "POST" -Uri "/v1/os/Installs" -Requests @($Requests13)
+
+# Retrieve the OS configuration file (kickstart/autoinstall template) from the shared catalog.
+$ConfigurationFile = Get-IntersightOsConfigurationFile -Name "ESXi8.0ConfigFile" -Catalog $SharedCatalog
+
+# Define the physical disk install target with disk name, serial number, and storage controller slot.
+$InstallTarget = Initialize-IntersightOsPhysicalDisk -ObjectType "OsPhysicalDisk" -Name "Disk 1" -SerialNumber "W0K40V960000K141L1Z5" -StorageControllerSlotId "MRAID"
+
+# Build the OS install request body with all the configuration gathered above.
+$OsInstallBody = Initialize-IntersightOsInstall -Description "" -InstallMethod "VMedia" -Image $OsImage -OsduImage $ScuImage -OverrideSecureBoot $true -Organization $Organization -Answers $Answers -ConfigurationFile $ConfigurationFile -InstallTarget $InstallTarget -Server $Server
+
+# Wrap the install request as a bulk REST sub-request and submit it via the Bulk API.
+$BulkSubRequest = Initialize-IntersightBulkRestSubRequest -ObjectType "BulkRestSubRequest" -Body $OsInstallBody
+$BulkInstallRequest = New-IntersightBulkRequest -Verb "POST" -Uri "/v1/os/Installs" -Requests @($BulkSubRequest)
